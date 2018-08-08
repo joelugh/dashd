@@ -913,12 +913,12 @@ bool static AlreadyHave(const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
     case MSG_BLOCK:
         return mapBlockIndex.count(inv.hash);
 
-    /* 
+    /*
         Dash Related Inventory Messages
 
         --
 
-        We shouldn't update the sync times for each of the messages when we already have it. 
+        We shouldn't update the sync times for each of the messages when we already have it.
         We're going to be asking many nodes upfront for the full inventory list, so we'll get duplicates of these.
         We want to only update the time on new hits, so that we can time out appropriately if needed.
     */
@@ -1062,6 +1062,13 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                     LogPrint("net", "historical block serving limit reached, disconnect peer=%d\n", pfrom->GetId());
 
                     //disconnect node
+                    LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                        PEER_LOG_MATCH,
+                        PEER_DISCONNECTED,
+                        pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                        pfrom->addr.ToString(),
+                        pfrom->GetId(),
+                        "historical block serving limit reached");
                     pfrom->fDisconnect = true;
                     send = false;
                 }
@@ -1321,6 +1328,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             Misbehaving(pfrom->GetId(), 100);
             return false;
         } else {
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "bad version");
             pfrom->fDisconnect = true;
             return false;
         }
@@ -1386,6 +1400,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             LogPrint("net", "peer=%d does not offer the expected services (%08x offered, %08x expected); disconnecting\n", pfrom->id, nServices, pfrom->nServicesExpected);
             connman.PushMessage(pfrom, CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::REJECT, strCommand, REJECT_NONSTANDARD,
                                strprintf("Expected to offer services %08x", pfrom->nServicesExpected)));
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "missing expected services");
             pfrom->fDisconnect = true;
             return false;
         }
@@ -1396,6 +1417,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             LogPrintf("peer=%d using obsolete version %i; disconnecting\n", pfrom->id, nVersion);
             connman.PushMessage(pfrom, CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::REJECT, strCommand, REJECT_OBSOLETE,
                                strprintf("Version must be %d or greater", MIN_PEER_PROTO_VERSION)));
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "obsolete version");
             pfrom->fDisconnect = true;
             return false;
         }
@@ -1417,6 +1445,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         if (pfrom->fInbound && !connman.CheckIncomingNonce(nNonce))
         {
             LogPrintf("connected to self at %s, disconnecting\n", pfrom->addr.ToString());
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "self");
             pfrom->fDisconnect = true;
             return true;
         }
@@ -1519,6 +1554,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         // Feeler connections exist only to verify if address is online.
         if (pfrom->fFeeler) {
             assert(pfrom->fInbound == false);
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "feeler connection");
             pfrom->fDisconnect = true;
         }
         return true;
@@ -1618,8 +1660,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         connman.AddNewAddresses(vAddrOk, pfrom->addr, 2 * 60 * 60);
         if (vAddr.size() < 1000)
             pfrom->fGetAddr = false;
-        if (pfrom->fOneShot)
+        if (pfrom->fOneShot) {
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "one shot");
             pfrom->fDisconnect = true;
+        }
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)
@@ -2630,6 +2680,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         if (!(pfrom->GetLocalServices() & NODE_BLOOM) && !pfrom->fWhitelisted)
         {
             LogPrint("net", "mempool request with bloom filters disabled, disconnect peer=%d\n", pfrom->GetId());
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "mempool request with bloom filters disabled");
             pfrom->fDisconnect = true;
             return true;
         }
@@ -2637,6 +2694,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         if (connman.OutboundTargetReached(false) && !pfrom->fWhitelisted)
         {
             LogPrint("net", "mempool request with bandwidth limit reached, disconnect peer=%d\n", pfrom->GetId());
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "mempool request with bandwidth limit reached");
             pfrom->fDisconnect = true;
             return true;
         }
@@ -2926,6 +2990,13 @@ bool ProcessMessages(CNode* pfrom, CConnman& connman, const std::atomic<bool>& i
         // Scan for message start
         if (memcmp(msg.hdr.pchMessageStart, chainparams.MessageStart(), CMessageHeader::MESSAGE_START_SIZE) != 0) {
             LogPrintf("PROCESSMESSAGE: INVALID MESSAGESTART %s peer=%d\n", SanitizeString(msg.hdr.GetCommand()), pfrom->id);
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pfrom->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pfrom->addr.ToString(),
+                pfrom->GetId(),
+                "invalid message start");
             pfrom->fDisconnect = true;
             return false;
         }
@@ -3409,6 +3480,13 @@ bool SendMessages(CNode* pto, CConnman& connman, const std::atomic<bool>& interr
             // the download window should be much larger than the to-be-downloaded set of blocks, so disconnection
             // should only happen during initial block download.
             LogPrintf("Peer=%d is stalling block download, disconnecting\n", pto->id);
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pto->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pto->addr.ToString(),
+                pto->GetId(),
+                "stalling block download");
             pto->fDisconnect = true;
             return true;
         }
@@ -3422,6 +3500,13 @@ bool SendMessages(CNode* pto, CConnman& connman, const std::atomic<bool>& interr
             int nOtherPeersWithValidatedDownloads = nPeersWithValidatedDownloads - (state.nBlocksInFlightValidHeaders > 0);
             if (nNow > state.nDownloadingSince + consensusParams.nPowTargetSpacing * (BLOCK_DOWNLOAD_TIMEOUT_BASE + BLOCK_DOWNLOAD_TIMEOUT_PER_PEER * nOtherPeersWithValidatedDownloads)) {
                 LogPrintf("Timeout downloading block %s from peer=%d, disconnecting\n", queuedBlock.hash.ToString(), pto->id);
+                LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                    PEER_LOG_MATCH,
+                    PEER_DISCONNECTED,
+                    pto->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                    pto->addr.ToString(),
+                    pto->GetId(),
+                    "block download timeout");
                 pto->fDisconnect = true;
                 return true;
             }
@@ -3438,6 +3523,13 @@ bool SendMessages(CNode* pto, CConnman& connman, const std::atomic<bool>& interr
                     // problems if we can't get any outbound peers.
                     if (!pto->fWhitelisted) {
                         LogPrintf("Timeout downloading headers from peer=%d, disconnecting\n", pto->GetId());
+                        LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                            PEER_LOG_MATCH,
+                            PEER_DISCONNECTED,
+                            pto->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                            pto->addr.ToString(),
+                            pto->GetId(),
+                            "header download timeout");
                         pto->fDisconnect = true;
                         return true;
                     } else {

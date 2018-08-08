@@ -45,6 +45,9 @@
 
 #include <math.h>
 
+// How frequently to log peer connections, in seconds
+static constexpr int64_t PEER_LOG_INTERVAL = 10 * 60; // 10
+
 // Dump addresses to peers.dat and banlist.dat every 15 minutes (900s)
 #define DUMP_ADDRESSES_INTERVAL 900
 
@@ -443,6 +446,12 @@ void CNode::CloseSocketDisconnect()
     if (hSocket != INVALID_SOCKET)
     {
         LogPrint("net", "disconnecting peer=%d\n", id);
+        LogPrintf("%s%s,%s,%s,id:%d\n",
+            PEER_LOG_MATCH,
+            PEER_CLOSE_SOCKET,
+            this->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+            this->addr.ToString(),
+            this->GetId());
         CloseSocket(hSocket);
     }
 }
@@ -721,6 +730,13 @@ bool CNode::ReceiveMsgBytes(const char *pch, unsigned int nBytes, bool& complete
 
         if (msg.in_data && msg.hdr.nMessageSize > MAX_PROTOCOL_MESSAGE_LENGTH) {
             LogPrint("net", "Oversized message from peer=%i, disconnecting\n", GetId());
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                this->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                this->addr.ToString(),
+                this->GetId(),
+                "oversized message");
             return false;
         }
 
@@ -873,6 +889,13 @@ size_t CConnman::SocketSendData(CNode *pnode) const
                 if (nErr != WSAEWOULDBLOCK && nErr != WSAEMSGSIZE && nErr != WSAEINTR && nErr != WSAEINPROGRESS)
                 {
                     LogPrintf("socket send error %s\n", NetworkErrorString(nErr));
+                    LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                        PEER_LOG_MATCH,
+                        PEER_DISCONNECTED,
+                        pnode->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                        pnode->addr.ToString(),
+                        pnode->GetId(),
+                        "socket send error");
                     pnode->fDisconnect = true;
                 }
             }
@@ -1326,8 +1349,16 @@ void CConnman::ThreadSocketHandler()
                         if (nBytes > 0)
                         {
                             bool notify = false;
-                            if (!pnode->ReceiveMsgBytes(pchBuf, nBytes, notify))
-                                pnode->CloseSocketDisconnect();
+                            if (!pnode->ReceiveMsgBytes(pchBuf, nBytes, notify)) {
+                                LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                                    PEER_LOG_MATCH,
+                                    PEER_DISCONNECTED,
+                                    pnode->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                                    pnode->addr.ToString(),
+                                    pnode->GetId(),
+                                    "could not receive message bytes");
+                                pnode->CloseSocketDisconnect();                               pnode->CloseSocketDisconnect();
+                            }
                             RecordBytesRecv(nBytes);
                             if (notify) {
                                 size_t nSizeAdded = 0;
@@ -1349,8 +1380,16 @@ void CConnman::ThreadSocketHandler()
                         else if (nBytes == 0)
                         {
                             // socket closed gracefully
-                            if (!pnode->fDisconnect)
+                            if (!pnode->fDisconnect) {
                                 LogPrint("net", "socket closed\n");
+                                LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                                    PEER_LOG_MATCH,
+                                    PEER_DISCONNECTED,
+                                    pnode->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                                    pnode->addr.ToString(),
+                                    pnode->GetId(),
+                                    "no bytes");
+                            }
                             pnode->CloseSocketDisconnect();
                         }
                         else if (nBytes < 0)
@@ -1359,8 +1398,16 @@ void CConnman::ThreadSocketHandler()
                             int nErr = WSAGetLastError();
                             if (nErr != WSAEWOULDBLOCK && nErr != WSAEMSGSIZE && nErr != WSAEINTR && nErr != WSAEINPROGRESS)
                             {
-                                if (!pnode->fDisconnect)
+                                if (!pnode->fDisconnect) {
                                     LogPrintf("socket recv error %s\n", NetworkErrorString(nErr));
+                                    LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                                        PEER_LOG_MATCH,
+                                        PEER_DISCONNECTED,
+                                        pnode->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                                        pnode->addr.ToString(),
+                                        pnode->GetId(),
+                                        "socket receive error");
+                                }
                                 pnode->CloseSocketDisconnect();
                             }
                         }
@@ -1639,8 +1686,6 @@ void CConnman::ThreadDNSAddressSeed()
 
 
 
-
-
 void CConnman::DumpAddresses()
 {
     int64_t nStart = GetTimeMillis();
@@ -1764,9 +1809,9 @@ void CConnman::ThreadOpenConnections()
         //  * Increase the number of connectable addresses in the tried table.
         //
         // Method:
-        //  * Choose a random address from new and attempt to connect to it if we can connect 
+        //  * Choose a random address from new and attempt to connect to it if we can connect
         //    successfully it is added to tried.
-        //  * Start attempting feeler connections only after node finishes making outbound 
+        //  * Start attempting feeler connections only after node finishes making outbound
         //    connections.
         //  * Only make a feeler connection once every few minutes.
         //
@@ -2243,6 +2288,13 @@ void CConnman::SetNetworkActive(bool active)
         LOCK(cs_vNodes);
         // Close sockets to all nodes
         BOOST_FOREACH(CNode* pnode, vNodes) {
+            LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+                PEER_LOG_MATCH,
+                PEER_DISCONNECTED,
+                pnode->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+                pnode->addr.ToString(),
+                pnode->GetId(),
+                "network inactive");
             pnode->CloseSocketDisconnect();
         }
     } else {
@@ -2388,7 +2440,13 @@ bool CConnman::Start(CScheduler& scheduler, std::string& strNodeError, Options c
     // Dump network addresses
     scheduler.scheduleEvery(boost::bind(&CConnman::DumpData, this), DUMP_ADDRESSES_INTERVAL);
 
+    scheduler.scheduleEvery(std::bind(&CConnman::LogPeers, this), PEER_LOG_INTERVAL);
+
     return true;
+}
+
+void CConnman::LogPeers() {
+    LogPrintf("%s,,,total=%d seen=%d\n", PEER_LOG_MATCH, GetNodeCount(CONNECTIONS_ALL), GetAddressCount());
 }
 
 class CNetCleanup
@@ -2466,8 +2524,16 @@ void CConnman::Stop()
     }
 
     // Close sockets
-    BOOST_FOREACH(CNode* pnode, vNodes)
+    BOOST_FOREACH(CNode* pnode, vNodes) {
+        LogPrintf("%s%s,%s,%s,id:%d reason:%s\n",
+            PEER_LOG_MATCH,
+            PEER_DISCONNECTED,
+            pnode->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+            pnode->addr.ToString(),
+            pnode->GetId(),
+            "stopping");
         pnode->CloseSocketDisconnect();
+    }
     BOOST_FOREACH(ListenSocket& hListenSocket, vhListenSocket)
         if (hListenSocket.socket != INVALID_SOCKET)
             if (!CloseSocket(hListenSocket.socket))
@@ -2835,6 +2901,12 @@ CNode::CNode(NodeId idIn, ServiceFlags nLocalServicesIn, int nMyStartingHeightIn
         LogPrint("net", "Added connection to %s peer=%d\n", addrName, id);
     else
         LogPrint("net", "Added connection peer=%d\n", id);
+    LogPrintf("%s%s,%s,%s,id:%d\n",
+        PEER_LOG_MATCH,
+        PEER_CONNECTED,
+        this->fInbound ? PEER_INBOUND : PEER_OUTBOUND,
+        this->addr.ToString(),
+        this->GetId());
 }
 
 CNode::~CNode()
