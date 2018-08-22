@@ -405,6 +405,11 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
     socklen_t len = sizeof(sockaddr);
     if (!addrConnect.GetSockAddr((struct sockaddr*)&sockaddr, &len)) {
         LogPrintf("Cannot connect to %s: unsupported network\n", addrConnect.ToString());
+        LogPrintf("%s%s,,%s,reason:%s\n",
+            PEER_LOG_MATCH,
+            PEER_CONNECT_FAIL,
+            addrConnect.ToString(),
+            "unsupported network");
         return false;
     }
 
@@ -443,12 +448,22 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
             if (nRet == 0)
             {
                 LogPrint("net", "connection to %s timeout\n", addrConnect.ToString());
+                LogPrintf("%s%s,,%s,reason:%s\n",
+                    PEER_LOG_MATCH,
+                    PEER_CONNECT_FAIL,
+                    addrConnect.ToString(),
+                    "timeout");
                 CloseSocket(hSocket);
                 return false;
             }
             if (nRet == SOCKET_ERROR)
             {
                 LogPrintf("select() for %s failed: %s\n", addrConnect.ToString(), NetworkErrorString(WSAGetLastError()));
+                LogPrintf("%s%s,,%s,reason:%s\n",
+                    PEER_LOG_MATCH,
+                    PEER_CONNECT_FAIL,
+                    addrConnect.ToString(),
+                    NetworkErrorString(WSAGetLastError()));
                 CloseSocket(hSocket);
                 return false;
             }
@@ -460,12 +475,22 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
 #endif
             {
                 LogPrintf("getsockopt() for %s failed: %s\n", addrConnect.ToString(), NetworkErrorString(WSAGetLastError()));
+                LogPrintf("%s%s,,%s,reason:%s\n",
+                    PEER_LOG_MATCH,
+                    PEER_CONNECT_FAIL,
+                    addrConnect.ToString(),
+                    NetworkErrorString(WSAGetLastError()));
                 CloseSocket(hSocket);
                 return false;
             }
             if (nRet != 0)
             {
                 LogPrintf("connect() to %s failed after select(): %s\n", addrConnect.ToString(), NetworkErrorString(nRet));
+                LogPrintf("%s%s,,%s,reason:%s\n",
+                    PEER_LOG_MATCH,
+                    PEER_CONNECT_FAIL,
+                    addrConnect.ToString(),
+                    NetworkErrorString(nRet));
                 CloseSocket(hSocket);
                 return false;
             }
@@ -477,6 +502,11 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
 #endif
         {
             LogPrintf("connect() to %s failed: %s\n", addrConnect.ToString(), NetworkErrorString(WSAGetLastError()));
+            LogPrintf("%s%s,,%s,reason:%s\n",
+                    PEER_LOG_MATCH,
+                    PEER_CONNECT_FAIL,
+                    addrConnect.ToString(),
+                    NetworkErrorString(WSAGetLastError()));
             CloseSocket(hSocket);
             return false;
         }
