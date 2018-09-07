@@ -1357,7 +1357,7 @@ void CConnman::ThreadSocketHandler()
                                     pnode->addr.ToString(),
                                     pnode->GetId(),
                                     "could not receive message bytes");
-                                pnode->CloseSocketDisconnect();                               pnode->CloseSocketDisconnect();
+                                pnode->CloseSocketDisconnect();
                             }
                             RecordBytesRecv(nBytes);
                             if (notify) {

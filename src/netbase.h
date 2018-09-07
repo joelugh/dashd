@@ -34,7 +34,7 @@ static const std::string PEER_DISCONNECTED_FROM_US = "disconnected";
 static const std::string PEER_DISCONNECTED = "disconnecting";
 static const std::string PEER_CLOSE_SOCKET = "close socket";
 static const std::string PEER_OUTBOUND = "outbound";
-static const std::string PEER_INBOUND = "outbound";
+static const std::string PEER_INBOUND = "inbound";
 
 class proxyType
 {
